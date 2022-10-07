@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+   <head>
+      <title>Socket chat</title>
+      <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+      <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+   </head>
+   
+   <script src = "/socket.io/socket.io.js"></script>
+   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.2/components/core-min.js"></script>
+   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.2/components/sha256.js"></script>
+   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.2/components/enc-base64.js"></script>
+   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.2/rollups/aes.js"></script>
+   <script>
+
+   function toWordArray(str){
+         return CryptoJS.enc.Utf8.parse(str);
+      }
+
+      function toString(words){
+         return CryptoJS.enc.Utf8.stringify(words);
+      }
+
+      function toBase64String(words){
+         return CryptoJS.enc.Base64.stringify(words);
+      }
+      
+      // var username = document.getElementById("name").value;
+      // var mess = document.getElementById("message").value;
+
+      function encrypt(input, key){
+   
+         var PROTOCOL_AES256 = 2;
+         var secret_key = CryptoJS.SHA256(key);
+         var header = toWordArray("AMAZON" + String.fromCharCode(PROTOCOL_AES256));
+         var iv = CryptoJS.lib.WordArray.random(16);
+         var body = CryptoJS.AES.encrypt(json_payload, secret_key, {iv: iv});
+
+         // construct the packet
+         // HEADER + IV + BODY
+         header.concat(iv);
+         header.concat(body.ciphertext);
+
+         // encode in base64
+         return toBase64String(header);
+      }
+
+      function decrypt(input, key){
+         // convert payload encoded in base64 to words
+         var packet = CryptoJS.enc.Base64.parse(input);
+
+         // helpers to compute for offsets
+         var PROTOCOL_AES256 = 2;
+         var secret_key = CryptoJS.SHA256(key);
+         var header = toWordArray("AMAZON" + String.fromCharCode(PROTOCOL_AES256));
+         const iv  = CryptoJS.enc.Hex.parse('101112131415161718191a1b1c1d1e1f');
+
+         // compute for offsets
+         var packet_size = packet.words.length - (iv.words.length + header.words.length);
+         var start = iv.words.length + header.words.length;
+         var end = packet.words.length;
+         
+         var ciphertext = CryptoJS.lib.WordArray.create(packet.words.slice(start, end));
+         var parsed_iv = CryptoJS.lib.WordArray.create(packet.words.slice(header.words.length, iv.words.length+1));
+         ciphertext = toBase64String(ciphertext);
+         var decrypted = CryptoJS.AES.decrypt(ciphertext, secret_key, {iv: parsed_iv});
+
+         return toString(decrypted);
+      }
+
+
+
+      var socket = io();
+      function setUsername() {
+         socket.emit('setUsername', document.getElementById('name').value);
+      };
+      var user;
+      socket.on('userExists', function(data) {
+         document.getElementById('error-container').innerHTML = data;
+      });
+      socket.on('userSet', function(data) {
+         user = data.username;
+         document.body.innerHTML = 
+         '<label for="message" class="h4" style="margin-top: 20px;">Message:</label>\
+    <ul id="message-container" style="height: 600px; border: solid 1px #cecece; list-style: none;"></ul>\
+    <form>\
+      <div class="form-group">\
+         <input id = "key" type = "password" name = "key" value = ""\
+         placeholder = "Key !">\
+        <textarea id="message" class="form-control" rows="5" placeholder="Enter your message" required></textarea>\
+      </div>\
+      <button type="button" id="form-submit" onclick="sendMessage()" class="btn btn-success btn-lg pull-right ">Send Messages</button>\
+    </form>'
+      });
+      function sendMessage() {
+         var msg = document.getElementById('message').value;
+         var key = document.getElementById('key').value;
+         console.log(key);
+         if(msg && key) {
+            var message = encrypt(msg, key);
+            console.log(message);
+            socket.emit('msg', {message: message, user: user, key: key});
+         }
+      }
+      socket.on('newmsg', function(data) {
+         // if(user) {
+         //    document.getElementById('message-container').innerHTML += '<div><b>' + 
+         //       data.user + '</b>: ' + data.message + '</div>'
+         // }
+         if(user && key){
+            var msg = decrypt(data.message, data.key);
+            console.log("message:" + msg);
+         }
+      })
+          // data
+         var key = "ZxlNEnojO5HbQngiYvrqu32Br6V";
+         var data = {};
+         data["name"] = "andrew";
+         data["company"] = "amazon";
+         var json_payload = JSON.stringify(data);
+         
+         console.log(json_payload);
+         
+         var payload = encrypt(json_payload, key);
+         var decoded = decrypt(payload, key);
+
+         console.log(decoded);
+   </script>
+   
+   <body>
+      <div id = "error-container"></div>
+      <input id = "name" type = "text" name = "name" value = "" 
+         placeholder = "Enter your name!">
+      <button type = "button" name = "button" onclick = "setUsername()">
+         Let me chat!
+      </button>
+   </body>
+</html>
